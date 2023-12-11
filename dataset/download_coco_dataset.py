@@ -2,7 +2,7 @@ import fiftyone as fo
 import fiftyone.zoo as foz
 import os
 
-dataset_name = "cityscapes"
+dataset_name = "coco"
 path = "/home/awi-docker/video_summarization/instance_seg/dataset/" + dataset_name
 if not os.path.exists(path):
     os.makedirs(path)

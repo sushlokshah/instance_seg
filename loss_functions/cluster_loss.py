@@ -106,8 +106,7 @@ class Cluster_loss(nn.Module):
             + self.beta * distance_loss
             + self.gamma * normalization_loss
         )
-        return (
-            total_loss,
+        return total_loss, (
             variance_loss,
             distance_loss,
             normalization_loss,
@@ -115,26 +114,26 @@ class Cluster_loss(nn.Module):
         )
 
 
-def Classification_loss(features, ground_truth):
-    """
-    :param features: (N, C, H, W)
-    :param ground_truth: (N, H, W)
-    :return: classification loss
-    """
-    N, C, H, W = features.size()
-    K = ground_truth.max() + 1
-    cluster_mean = torch.zeros((N, C, K)).cuda()
-    for n in range(N):
-        for k in range(K):
-            cluster_mean[n, :, k] = features[n, :, ground_truth[n] == k].mean(dim=1)
-    classification_loss = 0
-    for n in range(N):
-        for k in range(K):
-            classification_loss += torch.max(
-                F.mse_loss(
-                    features[n, :, ground_truth[n] == k],
-                    cluster_mean[n, :, k].view(C, 1).repeat(1, H * W),
-                ),
-                torch.tensor(0).cuda(),
-            )
-    return classification_loss / (N * K)
+# def Classification_loss(features, ground_truth):
+#
+
+
+class Classification_loss(nn.Module):
+    def __init__(self):
+        super(Classification_loss, self).__init__()
+
+    def forward(self, cluster_head, ground_truth):
+        """
+        :param features: (N, C, H, W)
+        :param ground_truth: (N, H, W)
+        :return: classification loss
+        """
+        N, C, K = cluster_head.size()
+        # K = ground_truth.max() + 1
+        classification_loss = 0
+        for n in range(N):
+            for k in range(K):
+                classification_loss += F.cross_entropy(
+                    cluster_head[n, :, k], ground_truth[n, k]
+                )
+        return classification_loss / (N * K)
