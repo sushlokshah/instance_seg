@@ -53,7 +53,7 @@ class CityScapes_lighting(pl.LightningDataModule):
                 root=self.data_dir,
                 split="train",
                 mode="fine",
-                target_type=["instance", "color"],
+                target_type=["instance"],
                 transforms=self.transforms,
                 random_crop=True,
                 random_flip=0.5,
@@ -63,7 +63,7 @@ class CityScapes_lighting(pl.LightningDataModule):
                 root=self.data_dir,
                 split="val",
                 mode="fine",
-                target_type=["instance", "color"],
+                target_type=["instance"],
                 transforms=self.transforms,
                 random_crop=True,
             )
@@ -71,7 +71,7 @@ class CityScapes_lighting(pl.LightningDataModule):
                 root=self.data_dir,
                 split="test",
                 mode="fine",
-                target_type=["instance", "color"],
+                target_type=["instance"],
                 transforms=self.transforms,
                 random_crop=True,
             )
@@ -125,7 +125,7 @@ class Instance_Lighting(LightningModule):
         return self.model(x)
 
     def model_step(self, batch: Any):
-        x, (inst, color) = batch
+        x, (inst) = batch
         features = self.forward(x)
         loss, cache = self.cluster_loss(features, inst)
         return features, loss, cache
@@ -152,46 +152,25 @@ class Instance_Lighting(LightningModule):
             "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, mode="min", factor=0.5, patience=10, verbose=True
             ),
-            "monitor": "val_loss",  # Default: val_loss
+            "monitor": "val/loss",  # Default: val_loss
             "interval": "epoch",
             "frequency": 1,
         }
 
         return [optimizer], [schedular]
 
-    def on_train_epoch_end(self, outputs: STEP_OUTPUT) -> None:
-        # `outputs` is a list of dicts returned from `training_step()`
-        avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
-        self.log("train/loss_epoch", avg_loss, on_step=False, on_epoch=True)
-
 
 ############################################################
 # defining callbacks
 ############################################################
-class MyPrintingCallback(Callback):
-    def on_init_start(self, trainer):
-        print("Starting to init trainer!")
-
-    def on_init_end(self, trainer):
-        print("trainer is init now")
-
-    def on_train_end(self, trainer, pl_module):
-        print("do something when training ends")
-
-    def on_train_epoch_start(self, trainer, pl_module):
-        print("do something when training starts a new epoch")
-
-    def on_train_epoch_end(self, trainer, pl_module, outputs):
-        print("do something when training ends a epoch")
-
-    def on_validation_epoch_end(self, trainer, pl_module):
-        print("do something when validation ends a epoch")
-
-    def on_test_epoch_end(self, trainer, pl_module):
-        print("do something when test ends a epoch")
-
-
 if __name__ == "__main__":
+    # set name based on date-time
+    import datetime
+
+    now = datetime.datetime.now()
+    name = now.strftime("%Y-%m-%d_%H-%M-%S")
+    print(name)
+
     # init data
     data_module = CityScapes_lighting(
         data_dir="video_summarization/instance_seg/dataset/cityscapes",
@@ -205,6 +184,7 @@ if __name__ == "__main__":
 
     # init logger
     logger = WandbLogger(
+        name=name,
         project="video_summarization",
         log_model=True,
         save_dir="/home/awi-docker/video_summarization/instance_seg/logs/",
@@ -215,7 +195,23 @@ if __name__ == "__main__":
         gpus=1,
         max_epochs=100,
         logger=logger,
-        callbacks=[],
+        callbacks=[
+            pl.callbacks.ModelCheckpoint(
+                monitor="val/loss",
+                mode="min",
+                save_top_k=3,
+                save_last=True,
+                filename="/home/awi-docker/video_summarization/instance_seg/weights/instance_seg-{epoch:02d}-{val_loss:.2f}",
+            ),
+            pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
+            pl.callbacks.EarlyStopping(
+                monitor="val/loss",
+                patience=10,
+                mode="min",
+                verbose=True,
+                check_on_train_epoch_end=True,
+            ),
+        ]
         # resume_from_checkpoint="lightning_logs/version_0/checkpoints/epoch=0-step=0.ckpt",
     )
 

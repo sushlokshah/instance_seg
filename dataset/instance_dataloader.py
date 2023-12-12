@@ -166,8 +166,8 @@ class Cityscapes(data.Dataset):
                 target = Image.open(self.targets[index][i])
 
             targets.append(target)
-
-        target = list(targets) if len(targets) > 1 else targets[0]
+        target = targets
+        # target = list(targets) if len(targets) > 1 else targets[0]
 
         if self.random_scale > 0:
             scale = np.random.uniform(1 - self.random_scale, 1 + self.random_scale)
@@ -179,7 +179,7 @@ class Cityscapes(data.Dataset):
         if self.random_crop:
             # random crop size 2/3H * 2/3W
             w, h = image.size
-            th, tw = int(h * 0.4), int(w * 0.4)
+            th, tw = int(h * 0.42), int(w * 0.42)
             x1 = np.random.randint(0, w - tw)
             y1 = np.random.randint(0, h - th)
             image = image.crop((x1, y1, x1 + tw, y1 + th))
