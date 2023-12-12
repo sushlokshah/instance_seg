@@ -12,13 +12,6 @@ import os
 from PIL import Image
 import json
 
-# train_tranform = transforms.Compose(
-#     [
-#         # transforms.RandomCrop((int(1024 * 2 / 3), int(2048 * 2 / 3))),
-#         # transforms.ToTensor(),
-#     ]
-# )
-
 
 class Cityscapes(data.Dataset):
     """`Cityscapes <http://www.cityscapes-dataset.com/>`_ Dataset.
@@ -186,7 +179,7 @@ class Cityscapes(data.Dataset):
         if self.random_crop:
             # random crop size 2/3H * 2/3W
             w, h = image.size
-            th, tw = int(h * 0.6), int(w * 0.6)
+            th, tw = int(h * 0.4), int(w * 0.4)
             x1 = np.random.randint(0, w - tw)
             y1 = np.random.randint(0, h - th)
             image = image.crop((x1, y1, x1 + tw, y1 + th))
