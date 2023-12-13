@@ -179,7 +179,7 @@ class Cityscapes(data.Dataset):
         if self.random_crop:
             # random crop size 2/3H * 2/3W
             w, h = image.size
-            th, tw = int(h * 0.42), int(w * 0.42)
+            th, tw = int(h * 0.45), int(w * 0.45)
             x1 = np.random.randint(0, w - tw)
             y1 = np.random.randint(0, h - th)
             image = image.crop((x1, y1, x1 + tw, y1 + th))

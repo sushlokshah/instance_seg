@@ -111,7 +111,7 @@ class Instance_Lighting(LightningModule):
     def __init__(self, lr=0.001):
         super().__init__()
         self.save_hyperparameters()
-        self.model = ENet(out_channels=128)
+        self.model = ENet(out_channels=64)
         self.cluster_loss = Cluster_loss(
             delta_cluster_distance=0.2,
             delta_variance_loss=0.2,
@@ -137,11 +137,13 @@ class Instance_Lighting(LightningModule):
         return loss
 
     def validation_step(self, batch: Any, batch_idx: int):
+        torch.cuda.empty_cache()
         features, loss, cache = self.model_step(batch)
         self.log("val/loss", loss, on_step=False, on_epoch=True)
         return loss
 
     def test_step(self, batch: Any, batch_idx: int):
+        torch.cuda.empty_cache()
         features, loss, cache = self.model_step(batch)
         self.log("test/loss", loss, on_step=False, on_epoch=True)
         return loss
@@ -174,7 +176,7 @@ if __name__ == "__main__":
     # init data
     data_module = CityScapes_lighting(
         data_dir="video_summarization/instance_seg/dataset/cityscapes",
-        batch_size=2,
+        batch_size=4,
         num_workers=4,
         pin_memory=True,
     )
