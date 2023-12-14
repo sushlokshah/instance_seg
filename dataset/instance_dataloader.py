@@ -157,7 +157,7 @@ class Cityscapes(data.Dataset):
         """
 
         image = Image.open(self.images[index]).convert("RGB")
-
+        image = image.resize((1024, 512), Image.BICUBIC)
         targets: Any = []
         for i, t in enumerate(self.target_type):
             if t == "polygon":
@@ -179,7 +179,7 @@ class Cityscapes(data.Dataset):
         if self.random_crop:
             # random crop size 2/3H * 2/3W
             w, h = image.size
-            th, tw = int(h * 0.45), int(w * 0.45)
+            th, tw = int(h / 2), int(w / 2)
             x1 = np.random.randint(0, w - tw)
             y1 = np.random.randint(0, h - th)
             image = image.crop((x1, y1, x1 + tw, y1 + th))
@@ -198,6 +198,10 @@ class Cityscapes(data.Dataset):
                 image = image.rotate(angle)
                 for i, t in enumerate(target):
                     target[i] = t.rotate(angle)
+
+        for i, t in enumerate(target):
+            width, height = t.size
+            target[i] = target[i].resize((width // 2, height // 2), Image.NEAREST)
 
         if self.transforms is not None:
             image = self.transforms(image)
@@ -240,15 +244,20 @@ class Cityscapes(data.Dataset):
 
 
 if __name__ == "__main__":
+    train_transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+        ]
+    )
     dataset = Cityscapes(
         "/home/awi-docker/video_summarization/instance_seg/dataset/cityscapes/",
         split="train",
         mode="fine",
         target_type=["instance", "color"],
-        transforms=train_tranform,
+        # transforms=train_transform,
         random_crop=True,
         random_flip=0.5,
-        random_rotate=10,
+        # random_rotate=10,
     )
 
     print(len(dataset))
@@ -268,7 +277,5 @@ if __name__ == "__main__":
     #     cv2.imwrite(vis_path + str(i) + ".png", mask)
     #     print(i)
 
-    cv2.imwrite(
-        vis_path + "col.png", np.array(col)[:, :, :3] * 0.5 + np.array(img_org) * 0.5
-    )
+    cv2.imwrite(vis_path + "col.png", np.array(col)[:, :, :3])
     # # print(poly)

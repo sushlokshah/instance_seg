@@ -8,11 +8,14 @@ from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torchvision.transforms import transforms
 from torch.utils.data import DataLoader, Dataset, random_split
 from pytorch_lightning.callbacks import Callback
+import numpy as np
+import cv2
 
 ############################################################
 # local imports
 from dataset.instance_dataloader import Cityscapes
 from models.Enet import ENet
+from models.resnet_based_model import Custom_model
 from loss_functions.cluster_loss import Cluster_loss, Classification_loss
 
 ############################################################
@@ -111,13 +114,14 @@ class Instance_Lighting(LightningModule):
     def __init__(self, lr=0.001):
         super().__init__()
         self.save_hyperparameters()
-        self.model = ENet(out_channels=64)
+        self.model = Custom_model()
+        # ENet(out_channels=64)
         self.cluster_loss = Cluster_loss(
             delta_cluster_distance=0.2,
             delta_variance_loss=0.2,
             alpha=1,
             beta=1,
-            gamma=0.001,
+            gamma=0.1,
         )
         self.lr = lr
 
@@ -127,6 +131,9 @@ class Instance_Lighting(LightningModule):
     def model_step(self, batch: Any):
         x, (inst) = batch
         features = self.forward(x)
+        # print(batch_idx)
+        # print(features.shape)
+        # print(inst.shape)
         loss, cache = self.cluster_loss(features, inst)
         return features, loss, cache
 
@@ -139,8 +146,65 @@ class Instance_Lighting(LightningModule):
     def validation_step(self, batch: Any, batch_idx: int):
         torch.cuda.empty_cache()
         features, loss, cache = self.model_step(batch)
+        cluster_heads = cache[-1]
+        masks = self.generate_mask(cluster_heads, features)
+        # save fisrt image of batch with masks
+        image = batch[0]
+        image = image[0].permute(1, 2, 0).cpu().numpy()
+        image = (image * 255).astype(np.uint8)
+        mask = masks[0].cpu().numpy()
+        mask = (mask * 255).astype(np.uint8)
+        # print(mask.shape)
+        mask = cv2.resize(mask, (image.shape[1], image.shape[0]))
+        cv2.imwrite(
+            "/home/awi-docker/video_summarization/instance_seg/dataset/vis/val_mask{}.png".format(
+                batch_idx
+            ),
+            mask,
+        )
+        cv2.imwrite(
+            "/home/awi-docker/video_summarization/instance_seg/dataset/vis/val_image{}.png".format(
+                batch_idx
+            ),
+            image,
+        )
+
         self.log("val/loss", loss, on_step=False, on_epoch=True)
         return loss
+
+    def generate_mask(self, cluster_heads, features):
+        """
+        :param cluster_heads: (N, C, K)
+        :param features: (N, C, H, W)
+        :return: (N, K, H, W)
+        """
+        masks = []
+        for n in range(len(cluster_heads)):
+            mask = torch.zeros(
+                (len(cluster_heads[n][0]), features.shape[2], features.shape[3])
+            )
+            for k in range(len(cluster_heads[n][0])):
+                # print(
+                #     (
+                #         features[n] * cluster_heads[n][:, k].unsqueeze(1).unsqueeze(1)
+                #     ).shape
+                # )
+                mask[k] = torch.norm(
+                    features[n] * cluster_heads[n][:, k].unsqueeze(1).unsqueeze(1),
+                    dim=0,
+                )
+                # print(mask[k].shape)
+                # normalize mask
+                mask[k] = (mask[k] - torch.min(mask[k])) / (
+                    torch.max(mask[k]) - torch.min(mask[k])
+                )
+                mask[k] = mask[k] > 0.5
+                mask[k] = mask[k] * (k + 1)
+            final_mask = torch.sum(mask, dim=0)
+            final_mask = final_mask / torch.max(final_mask)
+            masks.append(final_mask)
+
+        return masks
 
     def test_step(self, batch: Any, batch_idx: int):
         torch.cuda.empty_cache()
@@ -175,8 +239,8 @@ if __name__ == "__main__":
 
     # init data
     data_module = CityScapes_lighting(
-        data_dir="video_summarization/instance_seg/dataset/cityscapes",
-        batch_size=4,
+        data_dir="/home/awi-docker/video_summarization/instance_seg/dataset/cityscapes",
+        batch_size=2,
         num_workers=4,
         pin_memory=True,
     )
@@ -205,15 +269,17 @@ if __name__ == "__main__":
                 save_last=True,
                 filename="/home/awi-docker/video_summarization/instance_seg/weights/instance_seg-{epoch:02d}-{val_loss:.2f}",
             ),
-            pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
-            pl.callbacks.EarlyStopping(
-                monitor="val/loss",
-                patience=10,
-                mode="min",
-                verbose=True,
-                check_on_train_epoch_end=True,
-            ),
-        ]
+            # pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
+            # pl.callbacks.EarlyStopping(
+            #     monitor="val/loss",
+            #     patience=10,
+            #     mode="min",
+            #     verbose=True,
+            #     check_on_train_epoch_end=True,
+            # ),
+        ],
+        # gradient_clip_val=0.5,
+        # gradient_clip_algorithm="value"
         # resume_from_checkpoint="lightning_logs/version_0/checkpoints/epoch=0-step=0.ckpt",
     )
 

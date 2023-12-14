@@ -61,7 +61,7 @@ class Cluster_loss(nn.Module):
         variance_loss = 0
         for n in range(N):
             for k in range(len(instances_batch[n])):
-                variance_loss += torch.max(
+                current_loss = torch.max(
                     torch.mean(
                         torch.norm(
                             features[n] * (ground_truth[n] == instances_batch[n][k])
@@ -73,7 +73,8 @@ class Cluster_loss(nn.Module):
                     - self.delta_variance_loss,
                     torch.tensor(0).cuda(),
                 ) / len(instances_batch[n])
-
+                variance_loss += current_loss
+                # print("variance_loss:", current_loss)
         return variance_loss / N
 
     def distance_loss(self, cluster_mean):
@@ -83,10 +84,13 @@ class Cluster_loss(nn.Module):
         :return: distance loss
         """
         distance_loss = 0
+
         N = len(cluster_mean)
 
         for n in range(N):
             K = len(cluster_mean[n][0])
+            if K == 1:
+                continue
             # print(K)
             for k in range(len(cluster_mean[n][0])):
                 # print(k)
@@ -98,7 +102,7 @@ class Cluster_loss(nn.Module):
                 #         [cluster_mean[n][:, :k], cluster_mean[n][:, k + 1 :]], dim=1
                 #     ).shape
                 # )
-                distance_loss += torch.max(
+                dis_current_loss = torch.max(
                     2 * self.delta_cluster_distance
                     - torch.mean(
                         torch.norm(
@@ -113,6 +117,8 @@ class Cluster_loss(nn.Module):
                     ),
                     torch.tensor(0).cuda(),
                 )
+                distance_loss += dis_current_loss
+                # print("distance loss:", dis_current_loss)
         return distance_loss / (N * K)
 
     def normalization_loss(self, cluster_mean):
@@ -142,6 +148,10 @@ class Cluster_loss(nn.Module):
         )
         distance_loss = self.distance_loss(cluster_mean)
         normalization_loss = self.normalization_loss(cluster_mean)
+        # print("variance loss:", variance_loss.item())
+        # print("distance loss:", distance_loss)
+        # print("normalization loss:", normalization_loss.item())
+        print("_____________________________________________")
         total_loss = (
             self.alpha * variance_loss
             + self.beta * distance_loss
