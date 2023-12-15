@@ -32,22 +32,36 @@ class Cluster_loss(nn.Module):
         ground_truth = ground_truth.to(torch.long)
         instances_batch = []
         cluster_mean_batch = []
+        num_features_batch = []
         for n in range(N):
             instances = ground_truth[n].unique(sorted=True)
             # print(instances)
             instances_batch.append(instances)
             cluster_mean = []
+            num_features = []
             for i in range(len(instances)):
+                filtered_features = feature[n] * (ground_truth[n] == instances[i])
+                # print(filtered_features.shape)
+                # select the feature that is not all zero
+                filtered_features = filtered_features[
+                    :, torch.norm(filtered_features, dim=0) != 0
+                ]
+                num_features.append(filtered_features.shape[1])
+                # print(filtered_features.shape)
                 cluster_mean.append(
-                    torch.mean(feature[n] * (ground_truth[n] == instances[i]), dim=1)
+                    torch.mean(
+                        filtered_features,
+                        dim=1,
+                    )
                 )
             cluster_mean = torch.stack(cluster_mean, dim=1)
             cluster_mean_batch.append(cluster_mean)
+            num_features_batch.append(num_features)
             # print(cluster_mean[-1].shape)
-        return cluster_mean_batch, instances_batch
+        return cluster_mean_batch, instances_batch, num_features_batch
 
     def variance_loss(
-        self, features, cluster_mean_batch, instances_batch, ground_truth
+        self, features, cluster_mean_batch, instances_batch, ground_truth, num_features
     ):
         """
         :param features: (N, C, H, W)
@@ -59,12 +73,26 @@ class Cluster_loss(nn.Module):
         features = features.view(N, C, H * W)
         ground_truth = ground_truth.view(N, 1, H * W)
         variance_loss = 0
+
         for n in range(N):
+            normalizing_factor = 0
+            local_variance_loss = 0
             for k in range(len(instances_batch[n])):
+                normalizing_factor += 1 / num_features[n][k]
+                filtered_features = features[n] * (
+                    ground_truth[n] == instances_batch[n][k]
+                )
+                # print(filtered_features.shape)
+                filtered_features = filtered_features[
+                    :, torch.norm(filtered_features, dim=0) != 0
+                ]
+
+                # print(filtered_features.shape)
+
                 current_loss = torch.max(
                     torch.mean(
                         torch.norm(
-                            features[n] * (ground_truth[n] == instances_batch[n][k])
+                            filtered_features
                             - cluster_mean_batch[n][:, k].unsqueeze(1),
                             dim=0,
                         ),
@@ -72,9 +100,13 @@ class Cluster_loss(nn.Module):
                     )
                     - self.delta_variance_loss,
                     torch.tensor(0).cuda(),
-                ) / len(instances_batch[n])
-                variance_loss += current_loss
+                )
+                local_variance_loss += current_loss / num_features[n][k]
+
                 # print("variance_loss:", current_loss)
+            local_variance_loss /= normalizing_factor
+            variance_loss += local_variance_loss
+
         return variance_loss / N
 
     def distance_loss(self, cluster_mean):
@@ -142,16 +174,20 @@ class Cluster_loss(nn.Module):
         :return: loss
         """
         N, C, H, W = features.size()
-        cluster_mean, instances = self.calculate_cluster_mean(features, ground_truth)
+        cluster_mean, instances, num_features = self.calculate_cluster_mean(
+            features, ground_truth
+        )
+        # print(cluster_mean[0].shape)
+        # print(num_features[0])
         variance_loss = self.variance_loss(
-            features, cluster_mean, instances, ground_truth
+            features, cluster_mean, instances, ground_truth, num_features
         )
         distance_loss = self.distance_loss(cluster_mean)
         normalization_loss = self.normalization_loss(cluster_mean)
         # print("variance loss:", variance_loss.item())
         # print("distance loss:", distance_loss)
         # print("normalization loss:", normalization_loss.item())
-        print("_____________________________________________")
+        # print("_____________________________________________")
         total_loss = (
             self.alpha * variance_loss
             + self.beta * distance_loss
@@ -192,9 +228,10 @@ class Classification_loss(nn.Module):
 
 if __name__ == "__main__":
     loss = Cluster_loss()
-    features = torch.randn(4, 128, 64, 64)
-    ground_truth = torch.randint(0, 10, (4, 64, 64))
-    clusters, instances = loss(features, ground_truth)
-    for c, i in zip(clusters, instances):
-        print(c.shape)
-        print(i.shape)
+    features = torch.randn(1, 128, 64, 64)
+    ground_truth = torch.randint(0, 10, (1, 64, 64))
+    # print(ground_truth.shape)
+    # clusters, instances = loss(features, ground_truth)
+    # for c, i in zip(clusters, instances):
+    #     print(c.shape)
+    #     print(i.shape)

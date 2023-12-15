@@ -1,5 +1,6 @@
 dataset/cityscapes
 dataset/cityscapes_original
+dataset/coco
 dataset/vis
 logs/
 weights/

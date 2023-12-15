@@ -58,7 +58,7 @@ class CityScapes_lighting(pl.LightningDataModule):
                 mode="fine",
                 target_type=["instance"],
                 transforms=self.transforms,
-                random_crop=True,
+                random_crop=False,
                 random_flip=0.5,
                 random_rotate=10,
             )
@@ -68,7 +68,7 @@ class CityScapes_lighting(pl.LightningDataModule):
                 mode="fine",
                 target_type=["instance"],
                 transforms=self.transforms,
-                random_crop=True,
+                random_crop=False,
             )
             self.data_test = Cityscapes(
                 root=self.data_dir,
@@ -76,7 +76,7 @@ class CityScapes_lighting(pl.LightningDataModule):
                 mode="fine",
                 target_type=["instance"],
                 transforms=self.transforms,
-                random_crop=True,
+                random_crop=False,
             )
 
     def train_dataloader(self):
@@ -152,15 +152,29 @@ class Instance_Lighting(LightningModule):
         image = batch[0]
         image = image[0].permute(1, 2, 0).cpu().numpy()
         image = (image * 255).astype(np.uint8)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
         mask = masks[0].cpu().numpy()
         mask = (mask * 255).astype(np.uint8)
         # print(mask.shape)
-        mask = cv2.resize(mask, (image.shape[1], image.shape[0]))
+        output_image = image.copy()
+        output_mask = np.zeros_like(image)
+        for m in range(len(mask)):
+            random_color_mask = np.ones(image.shape)
+            # set random color
+            random_color = np.array([0, 255, 0]) * ((m + 1) / len(mask))
+            color_mask = random_color_mask * random_color
+            # apply mask
+            mask_to_apply = np.stack([mask[m], mask[m], mask[m]], axis=2)
+            mask_to_apply = cv2.resize(mask_to_apply, (image.shape[1], image.shape[0]))
+            mask_to_apply = mask_to_apply * color_mask
+            output_mask = output_mask + mask_to_apply
+
         cv2.imwrite(
             "/home/awi-docker/video_summarization/instance_seg/dataset/vis/val_mask{}.png".format(
                 batch_idx
             ),
-            mask,
+            output_mask * 0.4 + output_image * 0.6,
         )
         cv2.imwrite(
             "/home/awi-docker/video_summarization/instance_seg/dataset/vis/val_image{}.png".format(
@@ -198,17 +212,59 @@ class Instance_Lighting(LightningModule):
                 mask[k] = (mask[k] - torch.min(mask[k])) / (
                     torch.max(mask[k]) - torch.min(mask[k])
                 )
-                mask[k] = mask[k] > 0.5
-                mask[k] = mask[k] * (k + 1)
-            final_mask = torch.sum(mask, dim=0)
-            final_mask = final_mask / torch.max(final_mask)
-            masks.append(final_mask)
+                mask[k] = mask[k] > 0.8
+                # mask[k] = mask[k]
+            # final_mask = torch.sum(mask, dim=0)
+            # final_mask = final_mask / torch.max(final_mask)
+            masks.append(mask)
 
         return masks
 
     def test_step(self, batch: Any, batch_idx: int):
         torch.cuda.empty_cache()
         features, loss, cache = self.model_step(batch)
+        cluster_heads = cache[-1]
+        masks = self.generate_mask(cluster_heads, features)
+        # save fisrt image of batch with masks
+        image = batch[0]
+        image = image[0].permute(1, 2, 0).cpu().numpy()
+        image = (image * 255).astype(np.uint8)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+        mask = masks[0].cpu().numpy()
+        mask = (mask * 255).astype(np.uint8)
+        # print(mask.shape)
+        output_image = image.copy()
+        output_mask = np.zeros_like(image)
+        for m in range(len(mask)):
+            random_color_mask = np.ones(image.shape)
+            # set random color
+            random_color = np.array([0, 1, 0]) * ((m + 1) ** 2)
+            color_mask = random_color_mask * random_color
+            # apply mask
+            mask_to_apply = np.stack([mask[m], mask[m], mask[m]], axis=2)
+            mask_to_apply = cv2.resize(mask_to_apply, (image.shape[1], image.shape[0]))
+            mask_to_apply = mask_to_apply * color_mask
+            mask_to_apply = (mask_to_apply - mask_to_apply.min()) / (
+                mask_to_apply.max() - mask_to_apply.min()
+            )
+            mask_to_apply = mask_to_apply * 255
+            mask_to_apply = mask_to_apply.astype(np.uint8)
+            # output_mask = output_mask + mask_to_apply
+
+            cv2.imwrite(
+                "/home/awi-docker/video_summarization/instance_seg/dataset/vis_test/val_mask{}{}.png".format(
+                    batch_idx, m
+                ),
+                mask_to_apply,
+            )
+        cv2.imwrite(
+            "/home/awi-docker/video_summarization/instance_seg/dataset/vis_test/val_image{}.png".format(
+                batch_idx
+            ),
+            image,
+        )
+
         self.log("test/loss", loss, on_step=False, on_epoch=True)
         return loss
 
@@ -234,7 +290,7 @@ if __name__ == "__main__":
     import datetime
 
     now = datetime.datetime.now()
-    name = now.strftime("%Y-%m-%d_%H-%M-%S")
+    name = now.strftime("%Y-%m-%d_%H-%M-%S") + "_instance_seg_updated_loss"
     print(name)
 
     # init data
@@ -251,11 +307,18 @@ if __name__ == "__main__":
     # init logger
     logger = WandbLogger(
         name=name,
-        project="video_summarization",
+        project="instance_seg",
         log_model=True,
         save_dir="/home/awi-docker/video_summarization/instance_seg/logs/",
     )
+    if not os.path.exists(
+        "/home/awi-docker/video_summarization/instance_seg/weights/" + name
+    ):
+        os.makedirs("/home/awi-docker/video_summarization/instance_seg/weights/" + name)
 
+    save_path = (
+        "/home/awi-docker/video_summarization/instance_seg/weights/" + name + "/"
+    )
     # init trainer
     trainer = Trainer(
         gpus=1,
@@ -265,9 +328,9 @@ if __name__ == "__main__":
             pl.callbacks.ModelCheckpoint(
                 monitor="val/loss",
                 mode="min",
-                save_top_k=3,
+                save_top_k=10,
                 save_last=True,
-                filename="/home/awi-docker/video_summarization/instance_seg/weights/instance_seg-{epoch:02d}-{val_loss:.2f}",
+                filename=save_path + "instance_seg-{epoch:02d}-{val_loss:.2f}",
             ),
             # pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
             # pl.callbacks.EarlyStopping(
@@ -280,11 +343,13 @@ if __name__ == "__main__":
         ],
         # gradient_clip_val=0.5,
         # gradient_clip_algorithm="value"
-        # resume_from_checkpoint="lightning_logs/version_0/checkpoints/epoch=0-step=0.ckpt",
+        # resume_from_checkpoint="/home/awi-docker/video_summarization/instance_seg/weights/2023-12-14_14-20-23/instance_seg-epoch=30-val_loss=0.00.ckpt",
     )
+
+    # load weights
 
     # train
     trainer.fit(model, data_module)
 
     # # test
-    # trainer.test(model, data_module.test_dataloader())
+    trainer.test(model, data_module)

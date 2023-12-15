@@ -164,6 +164,7 @@ class Cityscapes(data.Dataset):
                 target = self._load_json(self.targets[index][i])
             else:
                 target = Image.open(self.targets[index][i])
+                target = target.resize((1024, 512), Image.NEAREST)
 
             targets.append(target)
         target = targets
@@ -254,7 +255,7 @@ if __name__ == "__main__":
         split="train",
         mode="fine",
         target_type=["instance", "color"],
-        # transforms=train_transform,
+        transforms=train_transform,
         random_crop=True,
         random_flip=0.5,
         # random_rotate=10,
@@ -262,6 +263,7 @@ if __name__ == "__main__":
 
     print(len(dataset))
     img_org, (inst, col) = dataset[0]
+    print(img_org.max(), img_org.min())
     inst = np.array(inst)
     print(inst.max(), inst.min())
     # print(img_org.shape, inst.shape, col.shape)
