@@ -101,10 +101,10 @@ class Cluster_loss(nn.Module):
                     - self.delta_variance_loss,
                     torch.tensor(0).cuda(),
                 )
-                local_variance_loss += current_loss / num_features[n][k]
+                local_variance_loss += current_loss
 
                 # print("variance_loss:", current_loss)
-            local_variance_loss /= normalizing_factor
+            local_variance_loss /= len(instances_batch[n])
             variance_loss += local_variance_loss
 
         return variance_loss / N

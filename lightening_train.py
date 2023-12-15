@@ -117,11 +117,11 @@ class Instance_Lighting(LightningModule):
         self.model = Custom_model()
         # ENet(out_channels=64)
         self.cluster_loss = Cluster_loss(
-            delta_cluster_distance=0.2,
-            delta_variance_loss=0.2,
+            delta_cluster_distance=1.5,
+            delta_variance_loss=0.5,
             alpha=1,
-            beta=1,
-            gamma=0.1,
+            beta=2,
+            gamma=0.001,
         )
         self.lr = lr
 
@@ -162,7 +162,9 @@ class Instance_Lighting(LightningModule):
         for m in range(len(mask)):
             random_color_mask = np.ones(image.shape)
             # set random color
-            random_color = np.array([0, 255, 0]) * ((m + 1) / len(mask))
+            random_color = np.array(
+                [(m * 5 + 200) // 3, (m * 10 + 100) // 2, (m * 7 + 200) // 5]
+            ) * ((m + 1) / len(mask))
             color_mask = random_color_mask * random_color
             # apply mask
             mask_to_apply = np.stack([mask[m], mask[m], mask[m]], axis=2)
@@ -212,7 +214,7 @@ class Instance_Lighting(LightningModule):
                 mask[k] = (mask[k] - torch.min(mask[k])) / (
                     torch.max(mask[k]) - torch.min(mask[k])
                 )
-                mask[k] = mask[k] > 0.8
+                mask[k] = mask[k] > 0.6
                 # mask[k] = mask[k]
             # final_mask = torch.sum(mask, dim=0)
             # final_mask = final_mask / torch.max(final_mask)
