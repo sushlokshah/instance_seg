@@ -157,14 +157,20 @@ class Cityscapes(data.Dataset):
         """
 
         image = Image.open(self.images[index]).convert("RGB")
-        image = image.resize((1024, 512), Image.BICUBIC)
+        image = image.resize((1024+24, 512+24), Image.BICUBIC)
+        image = np.array(image)
+        image = image[12:-12,12:-12,:]
+        image = Image.fromarray(image)
         targets: Any = []
         for i, t in enumerate(self.target_type):
             if t == "polygon":
                 target = self._load_json(self.targets[index][i])
             else:
                 target = Image.open(self.targets[index][i])
-                target = target.resize((1024, 512), Image.NEAREST)
+                target = target.resize((1024+24, 512+24), Image.NEAREST)
+                target = np.array(target)
+                target = target[12:-12,12:-12]
+                target = Image.fromarray(target)
 
             targets.append(target)
         target = targets
@@ -255,29 +261,30 @@ if __name__ == "__main__":
         split="train",
         mode="fine",
         target_type=["instance", "color"],
-        transforms=train_transform,
-        random_crop=True,
+        # transforms=train_transform,
         random_flip=0.5,
         # random_rotate=10,
     )
 
     print(len(dataset))
     img_org, (inst, col) = dataset[0]
-    print(img_org.max(), img_org.min())
+    # print(img_org.max(), img_org.min())
     inst = np.array(inst)
-    print(inst.max(), inst.min())
+    # print(img_org.shape)
+    print(inst.shape)
+    # print(inst.max(), inst.min())
     # print(img_org.shape, inst.shape, col.shape)
     vis_path = "/home/awi-docker/video_summarization/instance_seg/dataset/vis/"
     cv2.imwrite(vis_path + "org.png", np.array(img_org))
     # # # get unique values (instances)
     unique = np.unique(inst)
     print(len(unique))
-    # for i in unique:
-    #     mask = inst == i
-    #     mask = mask.astype(np.uint8)
-    #     mask = mask * 255
-    #     cv2.imwrite(vis_path + str(i) + ".png", mask)
-    #     print(i)
+    for i in unique:
+        mask = inst == i
+        mask = mask.astype(np.uint8)
+        mask = mask * 255
+        cv2.imwrite(vis_path + str(i) + ".png", mask)
+        print(i)
 
     cv2.imwrite(vis_path + "col.png", np.array(col)[:, :, :3])
     # # print(poly)
