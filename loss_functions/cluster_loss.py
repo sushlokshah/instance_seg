@@ -46,6 +46,7 @@ class Cluster_loss(nn.Module):
                 filtered_features = filtered_features[
                     :, torch.norm(filtered_features, dim=0) != 0
                 ]
+                # feature_current = filtered_features / torch.norm(filtered_features, dim=0)
                 num_features.append(filtered_features.shape[1])
                 # print(filtered_features.shape)
                 cluster_mean.append(
@@ -55,6 +56,7 @@ class Cluster_loss(nn.Module):
                     )
                 )
             cluster_mean = torch.stack(cluster_mean, dim=1)
+            # print(cluster_mean.max(),cluster_mean.min())
             cluster_mean_batch.append(cluster_mean)
             num_features_batch.append(num_features)
             # print(cluster_mean[-1].shape)
@@ -77,9 +79,10 @@ class Cluster_loss(nn.Module):
         for n in range(N):
             normalizing_factor = 0
             local_variance_loss = 0
+            feature_current = features[n]  # / torch.norm(features[n], dim=0)
             for k in range(len(instances_batch[n])):
                 normalizing_factor += 1 / num_features[n][k]
-                filtered_features = features[n] * (
+                filtered_features = feature_current * (
                     ground_truth[n] == instances_batch[n][k]
                 )
                 # print(filtered_features.shape)
@@ -101,10 +104,10 @@ class Cluster_loss(nn.Module):
                     - self.delta_variance_loss,
                     torch.tensor(0).cuda(),
                 )
-                local_variance_loss += current_loss
+                local_variance_loss += current_loss / num_features[n][k]
 
                 # print("variance_loss:", current_loss)
-            local_variance_loss /= len(instances_batch[n])
+            local_variance_loss /= normalizing_factor
             variance_loss += local_variance_loss
 
         return variance_loss / N

@@ -117,11 +117,11 @@ class Instance_Lighting(LightningModule):
         self.model = Custom_model()
         # ENet(out_channels=64)
         self.cluster_loss = Cluster_loss(
-            delta_cluster_distance=1.5,
-            delta_variance_loss=0.5,
+            delta_cluster_distance=1.2,
+            delta_variance_loss=0.2,
             alpha=1,
-            beta=2,
-            gamma=0.001,
+            beta=1,
+            gamma=0.1,
         )
         self.lr = lr
 
@@ -147,7 +147,7 @@ class Instance_Lighting(LightningModule):
         torch.cuda.empty_cache()
         features, loss, cache = self.model_step(batch)
         cluster_heads = cache[-1]
-        masks = self.generate_mask(cluster_heads, features)
+        masks = self.generate_mask_variance(cluster_heads, features)
         # save fisrt image of batch with masks
         image = batch[0]
         image = image[0].permute(1, 2, 0).cpu().numpy()
@@ -162,28 +162,42 @@ class Instance_Lighting(LightningModule):
         for m in range(len(mask)):
             random_color_mask = np.ones(image.shape)
             # set random color
-            random_color = np.array(
-                [(m * 5 + 200) // 3, (m * 10 + 100) // 2, (m * 7 + 200) // 5]
-            ) * ((m + 1) / len(mask))
+            # random_color = np.array(
+            #     [10*(m%2 == 0)*(m+1), 25*(m%3 == 0)*(m+1), 50*(m%5 == 0)*(m+1)]
+            # )
+            # random_color = np.array(
+            #     [10000/((m+1)**2), (m+1)**(m+1), 5000/(m+1)]
+            # )
+            random_color = np.random.randint(0, 255, size=3) + 50
+            # print(random_color)
+
+            random_color = random_color.astype(np.uint8)
             color_mask = random_color_mask * random_color
+            color_mask = color_mask.astype(np.uint8)
             # apply mask
             mask_to_apply = np.stack([mask[m], mask[m], mask[m]], axis=2)
             mask_to_apply = cv2.resize(mask_to_apply, (image.shape[1], image.shape[0]))
             mask_to_apply = mask_to_apply * color_mask
             output_mask = output_mask + mask_to_apply
+            cv2.imwrite(
+                "/home/awi-docker/video_summarization/instance_seg/dataset/vis/val_mask_{}_{}.png".format(
+                    batch_idx, m
+                ),
+                mask_to_apply * 0.3 + output_image * 0.7,
+            )
 
         cv2.imwrite(
-            "/home/awi-docker/video_summarization/instance_seg/dataset/vis/val_mask{}.png".format(
+            "/home/awi-docker/video_summarization/instance_seg/dataset/vis/val_mask_{}_all.png".format(
                 batch_idx
             ),
-            output_mask * 0.4 + output_image * 0.6,
+            output_mask * 0.3 + output_image * 0.7,
         )
-        cv2.imwrite(
-            "/home/awi-docker/video_summarization/instance_seg/dataset/vis/val_image{}.png".format(
-                batch_idx
-            ),
-            image,
-        )
+        # cv2.imwrite(
+        #     "/home/awi-docker/video_summarization/instance_seg/dataset/vis/val_image{}.png".format(
+        #         batch_idx
+        #     ),
+        #     image,
+        # )
 
         self.log("val/loss", loss, on_step=False, on_epoch=True)
         return loss
@@ -199,25 +213,73 @@ class Instance_Lighting(LightningModule):
             mask = torch.zeros(
                 (len(cluster_heads[n][0]), features.shape[2], features.shape[3])
             )
+            # print(cluster_heads[n].shape)
+            # print(len(cluster_heads[n][0]))
+            # print(cluster_heads[n])
             for k in range(len(cluster_heads[n][0])):
                 # print(
                 #     (
                 #         features[n] * cluster_heads[n][:, k].unsqueeze(1).unsqueeze(1)
                 #     ).shape
                 # )
-                mask[k] = torch.norm(
-                    features[n] * cluster_heads[n][:, k].unsqueeze(1).unsqueeze(1),
-                    dim=0,
+                # mask[k] = torch.norm(
+                #     features[n] * cluster_heads[n][:, k].unsqueeze(1).unsqueeze(1),
+                #     dim=0,
+                # )
+                # find dot product
+                flatten_features = features[n].view(features[n].shape[0], -1)
+                flatten_features = flatten_features / torch.norm(
+                    flatten_features, dim=0
                 )
+                # print(cluster_heads[n][:, k].max(), cluster_heads[n][:, k].min())
+                cluster_heads[n][:, k] = cluster_heads[n][:, k] / torch.norm(
+                    cluster_heads[n][:, k]
+                )
+                # print(features[n].shape)
+                # print(cluster_heads[n][:, k].shape)
+                mask_temp = torch.tensordot(
+                    cluster_heads[n][:, k].unsqueeze(1),
+                    flatten_features,
+                    dims=([0], [0]),
+                )
+                # print(mask_temp.shape)
+                # print(features[n].shape)
+                # print(mask_temp.max(), mask_temp.min())
+                mask[k] = mask_temp.reshape(
+                    1, features[n].shape[1], features[n].shape[2]
+                ).squeeze(0)
+                # .view(1, features[n].shape[2], features[n].shape[3])
                 # print(mask[k].shape)
                 # normalize mask
+                # print(mask[k].max(), mask[k].min())
+                mask[k] = mask[k] > 0.9
+
                 mask[k] = (mask[k] - torch.min(mask[k])) / (
                     torch.max(mask[k]) - torch.min(mask[k])
                 )
-                mask[k] = mask[k] > 0.6
                 # mask[k] = mask[k]
             # final_mask = torch.sum(mask, dim=0)
             # final_mask = final_mask / torch.max(final_mask)
+            masks.append(mask)
+
+        return masks
+
+    def generate_mask_variance(self, cluster_heads, features):
+        N, C, H, W = features.size()
+        features = features.view(N, C, H * W)
+        variance_loss = 0
+        masks = []
+        for n in range(N):
+            feature_current = features[n]  # / torch.norm(features[n], dim=0)
+            mask = torch.zeros((len(cluster_heads[n][0]), H, W))
+            for k in range(len(cluster_heads[n][0])):
+                mask[k] = torch.norm(
+                    feature_current - cluster_heads[n][:, k].unsqueeze(1),
+                    dim=0,
+                ).view(H, W)
+                mask[k] = mask[k] < 0.5
+                # print(mask[k].max(), mask[k].min())
+                # print(mask[k].shape)
             masks.append(mask)
 
         return masks
@@ -354,4 +416,4 @@ if __name__ == "__main__":
     trainer.fit(model, data_module)
 
     # # test
-    trainer.test(model, data_module)
+    # trainer.test(model, data_module)

@@ -157,9 +157,9 @@ class Cityscapes(data.Dataset):
         """
 
         image = Image.open(self.images[index]).convert("RGB")
-        image = image.resize((1024+24, 512+24), Image.BICUBIC)
+        image = image.resize((1024+24, 512+24 + 32), Image.BICUBIC)
         image = np.array(image)
-        image = image[12:-12,12:-12,:]
+        image = image[12:(-12-32),12:-12,:]
         image = Image.fromarray(image)
         targets: Any = []
         for i, t in enumerate(self.target_type):
@@ -167,9 +167,9 @@ class Cityscapes(data.Dataset):
                 target = self._load_json(self.targets[index][i])
             else:
                 target = Image.open(self.targets[index][i])
-                target = target.resize((1024+24, 512+24), Image.NEAREST)
+                target = target.resize((1024+24, 512+24 +32), Image.NEAREST)
                 target = np.array(target)
-                target = target[12:-12,12:-12]
+                target = target[12:(-12-32),12:-12]
                 target = Image.fromarray(target)
 
             targets.append(target)
@@ -267,7 +267,7 @@ if __name__ == "__main__":
     )
 
     print(len(dataset))
-    img_org, (inst, col) = dataset[0]
+    img_org, (inst, col) = dataset[1]
     # print(img_org.max(), img_org.min())
     inst = np.array(inst)
     # print(img_org.shape)

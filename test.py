@@ -1,15 +1,10 @@
-import torch
-import torchvision
-from torchvision.transforms import transforms
-from torchview import draw_graph
-from collections import OrderedDict
+import numpy as np
 
-x = OrderedDict()
-x["feat0"] = torch.rand(1, 10, 64, 64)
-x["feat2"] = torch.rand(1, 20, 16, 16)
-x["feat3"] = torch.rand(1, 30, 8, 8)
-
-m = torchvision.ops.FeaturePyramidNetwork([10, 20, 30], 5)
-m.summary()
-# model_graph = draw_graph(m, input_size=(1, 10, 20, 30), expand_nested=True)
-# model_graph.visual_graph
+for m in range(1, 10):
+    random_color = np.array(
+                [10000/(m**2), m**m, 5000/m]
+            )
+    random_color = np.random.randint(0, 255, size=3)
+            # print(random_color)
+    random_color = random_color.astype(np.uint8)
+    print(random_color)
